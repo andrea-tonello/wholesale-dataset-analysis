@@ -1,0 +1,1046 @@
+---
+title: "Data Analytics - wholesale"
+output:
+  html_document:
+    df_print: paged
+  pdf_document:
+    keep_tex: yes
+  word_document: default
+author: "Alberto Facchin, Leonardo Micheluz, Lorenzo Cusin, Andrea Tonello"
+date: "28-06-2023"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	results = FALSE
+)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(results = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+```{r tinytex, echo = FALSE, message = FALSE, results = FALSE}
+#tinytex::install_tinytex()
+```
+
+```{r lib, echo = FALSE, message = FALSE, results = FALSE}
+#install.packages("gvlma")
+#install.packages("ggcorrplot")
+library(kableExtra)
+library(ggcorrplot)
+library(gvlma)
+library(tidyverse)
+library(ggExtra)
+library(cowplot)
+library(magrittr)
+library(gtable)
+library(lattice)
+library(grid)
+library(gridExtra)
+library(corrplot)
+library(ggplot2)
+library(GGally)
+library(MASS)
+```
+
+```{r load, echo = FALSE, results = FALSE, message = FALSE}
+# working directory
+setwd("C:/Users/albyf/Desktop/UniTS/Basi di dati modB")
+wholesale = read.csv("wholesale_customers_data.csv", header = T, stringsAsFactors = T)
+str(wholesale)
+dim(wholesale)
+
+wholesale$Channel = factor(wholesale$Channel)
+levels(wholesale$Channel) = c("Horeca", "Retail")
+wholesale$Region = factor(wholesale$Region)
+levels(wholesale$Region) = c("Lisbon", "Oporto", "Others")
+
+print("Livelli di Channel:")
+print(levels(wholesale$Channel))
+print("Livelli di Region:")
+print(levels(wholesale$Region))
+
+table(wholesale$Channel)
+table(wholesale$Region)
+```
+
+# Vendita all'ingrosso
+
+## Introduzione
+
+Il dataset considerato in quest'analisi riguarda le spese annuali dei clienti di un commerciante all'ingrosso. I dati sono espressi in unità monetarie ed i clienti vengono raggruppati in due grandi categorie: i luoghi di ristorazione (Horeca) ed i negozi di vendita al dettaglio (Retail). Vengono elencate di seguito le variabili presenti e le relative informazioni:
+
+-   Channel [Categoriale], tipologia di venditore (Heroca \| Retail);
+-   Region [Categoriale], regione di provenienza del venditore (Lisbon \| Oporto \| Other);
+-   Fresh [Quantitativa], spesa annua di prodotti alimentari freschi;
+-   Milk [Quantitativa], spesa annua di prodotti alimentari derivanti dal latte;
+-   Grocery [Quantitativa], spesa annua di prodotti riguardanti drogheria;
+-   Frozen [Quantitativa], spesa annua di prodotti surgelati;
+-   Detergents_Paper [Quantitativa], spesa annua di detergenti e prodotti di carta;
+-   Delicassen [Quantitativa], spesa annua di prodotti di gastronomia.
+
+```{r, results = TRUE}
+print(head(wholesale))
+```
+
+<br>
+
+Di seguito riportiamo le rappresentazioni grafiche delle variabili:
+
+```{r, fig.align = 'center', fig.width=9, fig.height=6}
+g1 = ggplot(data = wholesale, aes(x = Channel)) + 
+  geom_bar(aes(fill = "cornflowerblue"),position = position_dodge()) + 
+  geom_text(aes(label = ..count..), stat = "count", vjust = 2, col = "white", size = 6) +
+  scale_fill_manual(values = "cornflowerblue") + 
+  theme(legend.position = "none") +
+  labs(title = "Frequenze assolute Channel", x = "Channel", y = "Clients")
+
+g2 = ggplot(data = wholesale, aes(x = Region)) + 
+  geom_bar(aes(fill = "darkgoldenrod1"),position = position_dodge()) + 
+  geom_text(aes(label = ..count..), stat = "count", vjust = 2, col = "white", size = 6) +
+  scale_fill_manual(values = "darkgoldenrod1") + 
+  theme(legend.position = "none") +
+  labs(title = "Frequenze assolute Region", x = "Region", y = "")
+
+# plotto i grafici
+plot_grid(
+  g1, g2,
+  ncol = 2, nrow = 1, rel_heights = c(1, 1, 1), rel_widths = c(1,1,1))
+```
+
+```{r, results = TRUE}
+# print("Frequenze relative di Channel")
+# print(margin.table(table(wholesale$Channel),1))
+# print("Frequenze relative di Region")
+# print(margin.table(table(wholesale$Region),1))
+```
+
+<br>
+
+Come si può notare dai grafici e dalle tabelle di frequenza, gli ordini piazzati dalla categoria Horeca sono decisamente più considerevoli di Retail (più del doppio). Analogamente, la categoria Others presenta decisamente molti più valori rispetto a Lisbon e Oporto.
+
+<br>
+
+```{r fig.height=7.25, fig.width=9.8}
+# distribution of qualitative variables
+plot_list = list()
+continues_vars = c("Fresh", "Milk", "Grocery", "Frozen", "Detergents_Paper", "Delicassen")
+for(var in continues_vars) {
+  plot = ggplot(wholesale, aes_string(x = var)) +
+          geom_boxplot(outlier.colour = "red", outlier.shape = 4, outlier.size = 3, aes(fill = var, alpha = 0.8)) +
+          labs(x = var, y = "") +
+          xlim(c(0,122000)) +
+          theme(axis.text.y=element_blank(), axis.ticks.y=element_blank(), legend.position = "none")
+  plot_list[[var]] = plot
+}
+grid.arrange(grobs = plot_list, nrow = 6, ncol = 1)
+```
+
+<br>
+
+Dal grafico precedente si nota come le variabili continue presentino distribuzioni differenti, nonostante le relative medie siano pressoché simili. É importante sottolineare la notevole presenza di outliers che potrebbe suggerire un'analisi orientata alla loro eliminazione. Si decide di non procedere in questo senso proprio per la tipologia di dato che esse rappresentano. Essendo rappresentazioni di spese non ci si aspetta che ci siano errori di misurazione (o perlomeno non se ne ha la certezza), quindi per quanto possano essere anomali ed elevati, essi hanno comunque una loro probabilità di realizzazione e quindi risulterebbe fuorviante condurre un'analisi senza di essi.
+
+L'obiettivo di questo studio è quello di individuare le relazioni che intercorrono tra le variabili al fine di generare dei modelli previsionali. Una preliminare fase di analisi esplorativa dei dati può quindi risultare utile.
+
+<br><br>
+
+## Analisi esplorativa dei dati
+
+<br>
+
+Consideriamo le variabili quantitative condizionatamente alle due variabili qualitative (Region e Channel) per scoprire eventuali relazioni. Partiamo quindi con la variabile Region:
+
+```{r}
+# funzione per estrarre la legenda da un grafico
+g_legend = function(a.gplot){
+  tmp = ggplot_gtable(ggplot_build(a.gplot))
+  leg = which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend = tmp$grobs[[leg]]
+  return(legend)
+}
+```
+
+```{r Boxplot1, fig.align='center', fig.width=9, fig.height=6}
+box1 = ggplot(data = wholesale, aes(x = Region, y = Fresh, color = Region)) + 
+  geom_boxplot() +
+  theme(legend.direction = "horizontal") +
+  labs(x = "", y = "Fresh") +
+  scale_color_manual(labels = c("Lisbon", "Oporto", "Others"), values = c("darkorange", "chartreuse", "cyan4"))
+
+box2 = ggplot(data = wholesale, aes(x = Region, y = Milk, color = Region)) + 
+  geom_boxplot() + 
+  labs(x = "", y = "Milk") +
+  scale_color_manual(labels = c("Lisbon", "Oporto", "Others"), values = c("darkorange", "chartreuse", "cyan4"))
+
+box3 = ggplot(data = wholesale, aes(x = Region, y = Grocery, color = Region)) + 
+  geom_boxplot() + 
+  labs(x = "", y = "Grocery") +
+  scale_color_manual(labels = c("Lisbon", "Oporto", "Others"), values = c("darkorange", "chartreuse", "cyan4"))
+
+box4 = ggplot(data = wholesale, aes(x = Region, y = Frozen, color = Region)) + 
+  geom_boxplot() + 
+  labs(x = "", y = "Frozen") +
+  scale_color_manual(labels = c("Lisbon", "Oporto", "Others"), values = c("darkorange", "chartreuse", "cyan4"))
+
+box5 = ggplot(data = wholesale, aes(x = Region, y = Detergents_Paper, color = Region)) + 
+  geom_boxplot() + 
+  labs(x = "", y = "Detergents_Paper") +
+  scale_color_manual(labels = c("Lisbon", "Oporto", "Others"), values = c("darkorange", "chartreuse", "cyan4"))
+
+box6 = ggplot(data = wholesale, aes(x = Region, y = Delicassen, color = Region)) + 
+  geom_boxplot() + 
+  labs(x = "", y = "Delicassen") +
+  scale_color_manual(labels = c("Lisbon", "Oporto", "Others"), values = c("darkorange", "chartreuse", "cyan4"))
+
+leg = g_legend(box1)
+
+box1 = box1 + theme(legend.position = "none")
+box2 = box2 + theme(legend.position = "none")
+box3 = box3 + theme(legend.position = "none")
+box4 = box4 + theme(legend.position = "none")
+box5 = box5 + theme(legend.position = "none")
+box6 = box6 + theme(legend.position = "none")
+
+grid.arrange(box1, box2, box3, box4, box5, box6, ncol=3, bottom=leg)
+```
+
+<br>
+
+Dai boxplot delle quantitative condizionate alla variabile Region emerge come, quest'ultima, non influenzi le distribuzioni, in quanto i boxplot sono molto simili.
+
+<br>
+
+Procediamo quindi con l'analisi passando alla variabile qualitativa Channel:
+
+```{r Boxplot2, fig.align='center', fig.width=9, fig.height=6}
+
+box1 = ggplot(data = wholesale, aes(x = Channel, y = Fresh, color = Channel)) + 
+  geom_boxplot() +
+  theme(legend.direction = "horizontal") +
+  labs(x = "", y = "Fresh") +
+  scale_color_manual(labels = c("Horeca", "Retail"), values = c("cornflowerblue", "darkgoldenrod1"))
+
+box2 = ggplot(data = wholesale, aes(x = Channel, y = Milk, color = Channel)) + 
+  geom_boxplot() + 
+  labs(x = "", y = "Milk") +
+  scale_color_manual(labels = c("Horeca", "Retail"), values = c("cornflowerblue", "darkgoldenrod1"))
+
+box3 = ggplot(data = wholesale, aes(x = Channel, y = Grocery, color = Channel)) + 
+  geom_boxplot() + 
+  labs(x = "", y = "Grocery") +
+  scale_color_manual(labels = c("Horeca", "Retail"), values = c("cornflowerblue", "darkgoldenrod1"))
+
+box4 = ggplot(data = wholesale, aes(x = Channel, y = Fresh, color = Channel)) + 
+  geom_boxplot() + 
+  labs(x = "", y = "Fresh") +
+  scale_color_manual(labels = c("Horeca", "Retail"), values = c("cornflowerblue", "darkgoldenrod1"))
+
+
+box5 = ggplot(data = wholesale, aes(x = Channel, y = Detergents_Paper, color = Channel)) + 
+  geom_boxplot() + 
+  labs(x = "", y = "Detergents_Paper") +
+  scale_color_manual(labels = c("Horeca", "Retail"), values = c("cornflowerblue", "darkgoldenrod1"))
+
+box6 = ggplot(data = wholesale, aes(x = Channel, y = Delicassen, color = Channel)) + 
+  geom_boxplot() + 
+  labs(x = "", y = "Delicassen") +
+  scale_color_manual(labels = c("Horeca", "Retail"), values = c("cornflowerblue", "darkgoldenrod1"))
+
+leg = g_legend(box1)
+
+box1 = box1 + theme(legend.position = "none")
+box2 = box2 + theme(legend.position = "none")
+box3 = box3 + theme(legend.position = "none")
+box4 = box4 + theme(legend.position = "none")
+box5 = box5 + theme(legend.position = "none")
+box6 = box6 + theme(legend.position = "none")
+
+grid.arrange(box1, box2, box3, box4, box5, box6, ncol=3, bottom=leg)
+
+```
+
+<br>
+
+Fatta esclusione per Delicassen, ora, le distribuzioni mostrate dai boxplot risultano essere significativamente differenti, sintomo di una sostanziale influenza della variabile Channel.
+
+Per studiare un'eventuale relazione di dipendenza tra le variabili quantitative, trasformiamo quest'ultime in fattori utilizzando 3 livelli: low, medium e high.
+
+<br>
+
+```{r Classe}
+
+wholesale$FreshClass <- cut(wholesale$Fresh, breaks = c(-1, 4000, 10000, 999999))
+levels(wholesale$FreshClass) <- c("low", "medium", "high")
+
+wholesale$MilkClass <- cut(wholesale$Milk, breaks = c(-1, 2000, 6000, 999999))
+levels(wholesale$MilkClass) <- c("low", "medium", "high")
+
+wholesale$GroceryClass <- cut(wholesale$Grocery, breaks = c(-1, 2500, 8000, 999999))
+levels(wholesale$GroceryClass) <- c("low", "medium", "high")
+
+wholesale$FrozenClass <- cut(wholesale$Frozen, breaks = c(-1, 800, 2000, 999999))
+levels(wholesale$FrozenClass) <- c("low", "medium", "high")
+
+wholesale$DetClass <- cut(wholesale$Detergents_Paper, breaks = c(-1, 500, 3000, 999999))
+levels(wholesale$DetClass) <- c("low", "medium", "high")
+
+wholesale$DelClass <- cut(wholesale$Delicassen, breaks = c(-1, 500, 1500, 999999))
+levels(wholesale$DelClass) <- c("low", "medium", "high")
+```
+
+I range considerati sono i seguenti:
+
+|    Variabile     |   Low    |    Medium    |    High     |
+|:----------------:|:--------:|:------------:|:-----------:|
+|      Fresh       | 0 - 4000 | 4001 - 10000 | 10001 - INF |
+|       Milk       | 0 - 2000 | 2001 - 6000  | 60001 - INF |
+|     Grocery      | 0 - 2500 | 2501 - 6000  | 60001 - INF |
+|      Frozen      | 0 - 4000 | 4001 - 10000 | 10001 - INF |
+| Detergents_Paper | 0 - 500  |  501 - 3000  | 3001 - INF  |
+|    Delicassen    | 0 - 500  |  501 - 1500  | 1501 - INF  |
+
+<br>
+
+Possiamo quindi procedere allo studio dell'indipendenza tra le variabili mediante il chi-squared test:
+
+|         |  Fresh   |  Milk   | Grocery |  Frozen   | Detergents_Paper | Delicassen |
+|:-------:|:--------:|:-------:|:-------:|:---------:|:----------------:|:----------:|
+| Channel | 0.008108 | 2.2e-16 | 2.2e-16 | 5.836e-06 |     2.2e-16      |  0.002112  |
+| Region  |  0.7205  | 0.5231  | 0.4224  |  0.4768   |      0.8972      |   0.284    |
+
+<br>
+
+A conferma di quanto detto sopra, si evince come la variabile Channel influenzi in modo deciso i valori delle spese, in quanto tutte le variabili presentano un p-value inferiore a 0.05, implicando quindi la presenza di una relazione di dipendenza.
+
+Per quanto riguarda la variabile Region, si nota come i valori del p-value siano superiori alla soglia di 0.05, implicando quindi il rifiuto dell'ipotesi nulla.
+
+<br>
+
+Passiamo ora alla rappresentazione grafica delle variabili quantitative tradotte in classi:
+
+```{r barplot classi, fig.align='center', fig.width=9, fig.height=6}
+# var per i colori
+colors = c("cyan4", "darkorange", "chartreuse")
+
+#barplot delle var quantitative tradotte in classi
+
+g1 = ggplot(data = wholesale, aes(x = FreshClass)) + 
+  geom_bar(aes(fill = FreshClass),position = position_dodge()) + 
+  scale_fill_manual(values = colors) + 
+  theme(legend.position = "none") +
+  labs(title = "Fresh products", x = "", y = "Clients")
+
+
+g2 = ggplot(data = wholesale, aes(x = MilkClass)) + 
+  geom_bar(aes(fill = MilkClass),position = position_dodge()) + 
+  scale_fill_manual(values = colors) + 
+  theme(legend.position = "none") +
+  labs(title = "Milk products", x = "", y = "")
+
+g3 = ggplot(data = wholesale, aes(x = GroceryClass)) + 
+  geom_bar(aes(fill = GroceryClass),position = position_dodge()) + 
+  scale_fill_manual(values = colors) + 
+  theme(legend.position = "none") +
+  labs(title = "Grocery products", x = "", y = "")
+
+
+g4 = ggplot(data = wholesale, aes(x = FrozenClass)) + 
+  geom_bar(aes(fill = FrozenClass),position = position_dodge()) + 
+  scale_fill_manual(values = colors) + 
+  theme(legend.position = "none") +
+  labs(title = "Frozen products", x = "", y = "Clients")
+
+g5 = ggplot(data = wholesale, aes(x = DetClass)) + 
+  geom_bar(aes(fill = DetClass),position = position_dodge()) + 
+  scale_fill_manual(values = colors) + 
+  theme(legend.position = "none") +
+  labs(title = "Detergents_Paper products", x = "", y = "")
+
+g6 = ggplot(data = wholesale, aes(x = DelClass)) + 
+  geom_bar(aes(fill = DelClass),position = position_dodge()) + 
+  scale_fill_manual(values = colors) + 
+  labs(title = "Delicassen products", x = "", y = "") +
+  theme(legend.direction = "horizontal", legend.title = element_blank())
+
+leg = g_legend(g6)
+g6 = g6 + theme(legend.position = "none")
+
+grid.arrange(g1, g2, g3, g4, g5, g6, ncol=3, bottom=leg)
+```
+
+<br>
+
+Plot degli istogrammi relativi alle variabili quantitative a cui sovrapponiamo le curve di densità.
+
+```{r barplot densità, fig.align='center', fig.width=9, fig.height=6}
+g1 = ggplot(wholesale,aes(x=Fresh))+
+  geom_histogram(aes(y=..density..), fill="#B799FF", colour = "black",
+                 position = "identity",alpha=0.6, bins = 40, show.legend = F)+
+  geom_density(lwd=1.3, colour = "black", show.legend = F) + 
+  labs(y = "Density")
+
+g2 = ggplot(wholesale,aes(x=Milk))+
+  geom_histogram(aes(y=..density..), fill="#EEE3CB", colour = "black",
+                 position = "identity", alpha=0.6, bins = 40, show.legend = F)+
+  geom_density(lwd=1.3, colour = "black", show.legend = F) + labs(y = "")
+
+g3 = ggplot(wholesale,aes(x=Grocery))+
+  geom_histogram(aes(y=..density..), fill="#F7A4A4", colour = "black",
+                 position = "identity",alpha=0.6, bins = 40, show.legend = F)+
+  geom_density(lwd=1.3, colour = "black", show.legend = F) + labs(y = "")
+
+g4 = ggplot(wholesale,aes(x=Frozen))+
+  geom_histogram(aes(y=..density..), fill="cyan4", colour = "black",
+                 position = "identity", alpha=0.6, bins = 40, show.legend = F)+
+  geom_density(lwd=1.3, colour = "black", show.legend = F) + 
+  labs(y = "Density")
+
+g5 = ggplot(wholesale,aes(x=Detergents_Paper))+
+  geom_histogram(aes(y=..density..), fill="darkorange", colour = "black",
+                 position = "identity",alpha=0.6, bins = 40, show.legend = F)+
+  geom_density(lwd=1.3, colour = "black", show.legend = F) + labs(y = "")
+
+g6 = ggplot(wholesale,aes(x=Delicassen))+
+  geom_histogram(aes(y=..density..), fill="chartreuse", colour = "black",
+                 position = "identity",alpha=0.6, bins = 40, show.legend = F)+
+  geom_density(lwd=1.3, colour = "black", show.legend = F) + labs(y = "") 
+
+# plotto i grafici
+plot_grid(
+  g1, g2, g3,
+  g4, g5, g6,
+  ncol = 3, nrow = 2, rel_heights = c(1, 1, 1), rel_widths = c(1,1,1))
+
+```
+
+Si notano delle distribuzioni unimodali.
+
+<br>
+
+Procediamo ora con il riportare gli scatterplot di tutte le coppie formate da variabili quantitative.
+
+![](region_gif.gif)
+
+<br>
+
+Dagli scatterplot delle variabili quantitative condizionate alla variabile categoriale Region, emerge come, al variare della regione, i punti sembrano mantenere lo stesso pattern, sebbene cambi la numerosità(come già visto nella sezione riguardante le descrizione del dataset).
+
+<br>
+
+![](channel_gif.gif)
+
+<br>
+
+Per quanto riguarda gli scatterplot condizionati alla variabile qualitativa Channel, si può notare come, cambiando il canale di vendita, i punti seguano pattern diversi, con ciò si può concludere che Channel è più influente sull'insieme dei dati rispetto a Region.
+
+A seguito di queste considerazioni, nel momento in cui andremo a sviluppare i modelli lineari, considereremo solo l'interazione della variabile categoriale Channel, ed, eventualmente, l'interazione della stessa con la variabile esplicativa.
+
+<br>
+
+Ora analizziamo la matrice di correlazione con il comando corrplot per vedere quali sono gli indici di correlazione tra le variabili presenti nel dataset.
+
+```{r corr, echo = FALSE, results = FALSE}
+corr_mat = cor(wholesale[, -c(1, 2, 9, 10, 11, 12, 13, 14)])  # matrice di correlazione
+corr = round(corr_mat, 1)
+#ggcorrplot(corr, method = "circle")
+#ggcorrplot(corr, hc.order = TRUE, lab = TRUE)
+par(mfrow = c(1, 1))
+corrplot(corr_mat, method = "ellipse")
+corrplot(corr_mat, method = "number")
+```
+
+<br>
+
+I dati appena ottenuti sono facilmente verificabili graficamente con gli scatterplot visti in precedenza. Ad esempio Detergents_Paper e Grocery sembrano effettivamente seguire un andamento lineare nel loro grafico.
+
+Combinando questi dati con le analisi fatte in precedenza, si decide, quindi, di selezionare le 4 coppie di variabili che possiedono una maggiore interazione tra di esse al fine di creare dei modelli di previsione lineare. Eccole elencate:
+
+1.  Detergents_Paper \~ Grocery: 0.92
+2.  Milk \~ Grocery: 0.73
+3.  Detergents_Paper \~ Milk: 0.66
+4.  Milk \~ Delicassen : 0.41
+
+In seguito considereremo, nell'analisi, anche la possibilità di utilizzare la variabile esplicativa trasformata, quindi con una delle seguenti trasformazioni:
+
+1.  Logaritmica
+2.  Square root
+3.  Quadratica
+
+Infatti, in molti casi, applicare delle trasformazioni alle variabili può incidere significativamente sulla bontà del modello.
+
+<br><br>
+
+## Regressione lineare
+
+Si seguirà un procedimento analogo per ogni coppia di variabili. Come già accennato esso sarà composto da:
+
+1.  analisi di correlazione con le trasformazioni di variabili;
+
+2.  creazione dei modelli lineari;
+
+3.  analisi della bontà del modello.
+
+<br>
+
+#### Detergents_Paper \~ Grocery.
+
+```{r Detergents_Paper ~ Grocery, fig.align='center', fig.width=7, fig.height=5}
+par(mfrow = c(2, 2))
+
+g11 = ggplot(data = wholesale, aes(x = Grocery, y = Detergents_Paper)) + 
+  geom_point(size = 0.5)
+g12 = ggplot(data = wholesale, aes(x = log(Grocery), y = Detergents_Paper)) + 
+  geom_point(size = 0.5)
+g13 = ggplot(data = wholesale, aes(x = sqrt(Grocery), y = Detergents_Paper)) +
+  geom_point(size = 0.5)
+g14 = ggplot(data = wholesale, aes(x = (Grocery)^2, y = Detergents_Paper)) + 
+  geom_point(size = 0.5)
+
+grid.arrange(g11, g12, g13, g14, ncol=2)
+
+cor(wholesale$Grocery, wholesale$Detergents_Paper)
+cor(log(wholesale$Grocery), wholesale$Detergents_Paper)
+cor(sqrt(wholesale$Grocery), wholesale$Detergents_Paper)
+cor((wholesale$Grocery)^2, wholesale$Detergents_Paper)
+```
+
+-   Indice di correlazione senza trasformazioni: 0.9246407
+
+-   Indice di correlazione con trasformazione logaritmica: 0.6667038
+
+-   Indice di correlazione con trasformazione square root: 0.8505584
+
+-   Indice di correlazione con trasformazione quadratica: 0.8138609
+
+Dopo aver valutato gli indici di correlazione con le diverse trasformazioni abbiamo deciso di utilizzare le variabili senza trasformazioni.
+
+<br>
+
+```{r fit1, results = FALSE}
+risp_var1 = wholesale$Detergents_Paper
+esp_var1 = wholesale$Grocery
+fit11 = lm(risp_var1 ~ esp_var1, data = wholesale)
+summary(fit11) # Multiple R-squared:  0.855
+
+fit21 = lm(risp_var1 ~ esp_var1 + Channel, data = wholesale)
+summary(fit21) # Adjusted R-squared:  0.8628
+
+fit31 = lm(risp_var1 ~ esp_var1 + Channel + esp_var1*Channel, data = wholesale)
+summary(fit31) # Adjusted R-squared:  0.8919 
+```
+
+Gli R\^2 relativi ai tre modelli sono i seguenti:
+
+1.  Detergents_Paper \~ Grocery: 0.855
+
+2.  Detergents_Paper \~ Grocery + Channel: 0.8628
+
+3.  Detergents_Paper \~ Grocery + Channel + Grocery \* Channel: 0.8919
+
+<br>
+
+Output AIC ed ANOVA:
+
+```{r, results = TRUE}
+modello_1 = fit11
+modello_2 = fit21
+modello_3 = fit31
+AIC(modello_1, modello_2, modello_3)
+anova(modello_1, modello_2, modello_3)
+```
+
+<br>
+
+Dopo aver creato i tre modelli abbiamo deciso di utilizzare quello con l'interazione, considerando, altresì, i tre relativi AIC ed il test ANOVA.
+
+```{r gvlma1, echo = FALSE}
+par(mfrow = c(2,2))
+plot(fit31)
+gvlma_obj1 = gvlma(fit31)
+gvlma_obj1
+```
+
+```{r, results = TRUE}
+dafr1 <- data.frame(Info = c("Skewness", "Kurtosis", "Heteroscedasticity"),
+                    Value = c("3.400e+00", "2.970e+03", "2.995e+00"),
+                    Pvalue = c("0.06518", "0.00000", "0.08351"),
+                    Decision = c("Assumptions acceptable", "Assumptions NOT satisfied", "Assumptions acceptable"))
+
+dafr1 %>%
+  kbl() %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+# print("Togliere commento output GULMA")
+```
+
+<br>
+
+Dai grafici e dai risultati sulle assunzioni, mostrate dall'oggetto gvlma, si può notare come vi sia omoschedasticità ed una discreta gaussianità, inoltre sembra esserci una relazione lineare tra le variabili Detergents_Paper e Grocery.
+
+```{r scatterplot1, echo = FALSE}
+b01 = coef(fit31)[1]
+b11 = coef(fit31)[2]
+b21 = coef(fit31)[3]
+b31 = coef(fit31)[4]
+
+gm1 = ggplot(wholesale, aes(x = esp_var1, y = risp_var1, color = Channel)) + 
+  geom_point(size = 0.5) + 
+  geom_abline(intercept = b01, slope = b11, color = "#F8766D") +
+  geom_abline(intercept = b01 + b21, slope = b11 + b31, color = "#00BFC4") +
+  ggtitle("Detergents_Paper ~ Grocery") +
+  xlab("Grocery") +
+  ylab("Detergents_Paper") + 
+  theme(legend.position="none")
+```
+
+<br><br>
+
+#### Milk \~ Grocery
+
+```{r Milk ~ Grocery, fig.align='center', fig.width=7, fig.height=5}
+g21 = ggplot(data = wholesale, aes(x = Grocery, y = Milk)) + 
+  geom_point(size = 0.5)
+g22 = ggplot(data = wholesale, aes(x = log(Grocery), y = Milk)) + 
+  geom_point(size = 0.5)
+g23 = ggplot(data = wholesale, aes(x = sqrt(Grocery), y = Milk)) +
+  geom_point(size = 0.5)
+g24 = ggplot(data = wholesale, aes(x = (Grocery)^2, y = Milk)) + 
+  geom_point(size = 0.5)
+
+grid.arrange(g21, g22, g23, g24, ncol=2)
+
+cor(wholesale$Grocery, wholesale$Milk)
+cor(log(wholesale$Grocery), wholesale$Milk)
+cor(sqrt(wholesale$Grocery), wholesale$Milk)
+cor((wholesale$Grocery)^2, wholesale$Milk)
+```
+
+-   Indice di correlazione senza trasformazioni: 0.7283351
+
+-   Indice di correlazione con trasformazione logaritmica: 0.5970228
+
+-   Indice di correlazione con trasformazione square root: 0.7136706
+
+-   Indice di correlazione con trasformazione quadratica: 0.5693098
+
+In seguito alla valutazione degli indici di correlazione con le diverse trasformazioni abbiamo deciso di utilizzare le variabili senza trasformazioni
+
+<br>
+
+```{r fit2, echo = FALSE}
+risp_var2 = wholesale$Milk
+esp_var2 = wholesale$Grocery
+fit12 = lm(risp_var2 ~ esp_var2, data = wholesale)
+summary(fit12) # Multiple R-squared:  0.5305
+
+fit22 = lm(risp_var2 ~ esp_var2 + Channel, data = wholesale)
+summary(fit22) # Adjusted R-squared:  0.5288
+
+fit32 = lm(risp_var2 ~ esp_var2 + Channel + esp_var2*Channel, data = wholesale)
+summary(fit32) # Adjusted R-squared:  0.5342
+```
+
+Gli R\^2 relativi ai tre modelli sono i seguenti:
+
+-   Milk \~ Grocery: 0.5305
+
+-   Milk \~ Grocery + Channel: 0.5288
+
+-   Milk \~ Grocery + Channel + Grocery \* Channel: 0.5342
+
+<br>
+
+Output AIC ed ANOVA:
+
+```{r, results = TRUE}
+modello_1 = fit12
+modello_2 = fit22
+modello_3 = fit32
+AIC(modello_1, modello_2, modello_3)
+anova(modello_1, modello_2, modello_3)
+```
+
+<br>
+
+Secondo gli stessi criteri di valutazione utilizzati per la coppia di variabili precedente abbiamo deciso di utilizzare il modello semplice, in quanto, nonostante il modello con l'interazione abbia AIC minore e R\^2 aggiustato maggiore, la differenza non è così significativa, come emerge dal test ANOVA, pertanto abbiamo preferito utilizzare un modello più semplice possibile.
+
+```{r gvlma2, echo = FALSE}
+par(mfrow = c(2,2))
+plot(fit12)
+gvlma_obj2 = gvlma(fit12)
+gvlma_obj2
+```
+
+```{r, results = TRUE}
+dafr2 <- data.frame(Info = c("Skewness", "Kurtosis", "Heteroscedasticity"),
+                    Value = c("832.04", "27401.47", 
+                              "16.92"),
+                    Pvalue = c("0.00000", "0.00000", "3.896e-05"),
+                    Decision = c("Assumptions NOT satisfied", "Assumptions NOT satisfied", "Assumptions NOT satisfied"))
+
+dafr2 %>%
+  kbl() %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+# print("Togliere commento output GULMA")
+```
+
+<br>
+
+Dai grafici e dai risultati sulle assunzioni mostrate dall'oggetto gvlma, si può notare come vi sia eteroschedasticità, non gaussianità, e non linearità nell'associazione tra la variabile Milk condizionatamente a Grocery.
+
+```{r scatterplot2, echo = FALSE}
+b02 = coef(fit12)[1]
+b12 = coef(fit12)[2]
+
+gm2 = ggplot(wholesale, aes(x = esp_var2, y = risp_var2, col = Channel)) + 
+  geom_point(size = 0.5) + 
+  geom_abline(intercept = b02, slope = b12) +
+  ggtitle("Milk ~ Grocery") +
+  xlab("Grocery") +
+  ylab("Milk") + 
+  theme(legend.position="none")
+```
+
+<br><br>
+
+#### Detergents_Paper \~ Milk
+
+```{r Detergents_Paper ~ Milk, fig.align='center', fig.width=7, fig.height=5}
+g31 = ggplot(data = wholesale, aes(x = Milk, y = Detergents_Paper)) + 
+  geom_point(size = 0.5)
+g32 = ggplot(data = wholesale, aes(x = log(Milk), y = Detergents_Paper)) + 
+  geom_point(size = 0.5)
+g33 = ggplot(data = wholesale, aes(x = sqrt(Milk), y = Detergents_Paper)) +
+  geom_point(size = 0.5)
+g34 = ggplot(data = wholesale, aes(x = (Milk)^2, y = Detergents_Paper)) + 
+  geom_point(size = 0.5)
+
+grid.arrange(g31, g32, g33, g34, ncol=2)
+
+cor(wholesale$Milk, wholesale$Detergents_Paper)
+cor(log(wholesale$Milk), wholesale$Detergents_Paper)
+cor(sqrt(wholesale$Milk), wholesale$Detergents_Paper)
+cor((wholesale$Milk)^2, wholesale$Detergents_Paper)
+```
+
+-   Indice di correlazione senza trasformazioni: 0.6618157
+
+-   Indice di correlazione con trasformazione logaritmica: 0.5635915
+
+-   Indice di correlazione con trasformazione square root: 0.6578422
+
+-   Indice di correlazione con trasformazione quadratica: 0.5154587
+
+In seguito alla valutazione degli indici di correlazione con le diverse trasformazioni abbiamo deciso di utilizzare le variabili senza trasformazioni
+
+```{r fit3, echo = FALSE}
+risp_var3 = wholesale$Detergents_Paper
+esp_var3 = wholesale$Milk
+fit13 = lm(risp_var3 ~ esp_var3, data = wholesale)
+summary(fit13) # Multiple R-squared:  0.438
+
+fit23 = lm(risp_var3 ~ esp_var3 + Channel, data = wholesale)
+summary(fit23) # Adjusted R-squared:  0.5752
+
+fit33 = lm(risp_var3 ~ esp_var3 + Channel + esp_var3*Channel, data = wholesale)
+summary(fit33) # Adjusted R-squared:  0.6205
+```
+
+<br>
+
+Gli R\^2 relativi ai tre modelli sono i seguenti:
+
+-   Detergents_Paper \~ Milk: 0.438
+
+-   Detergents_Paper \~ Milk + Channel: 0.5752
+
+-   Detergents_Paper \~ Milk + Channel + Milk \* Channel: 0.6205
+
+<br>
+
+Output AIC ed ANOVA:
+
+```{r, results = TRUE}
+modello_1 = fit13
+modello_2 = fit23
+modello_3 = fit33
+AIC(modello_1, modello_2, modello_3)
+anova(modello_1, modello_2, modello_3)
+```
+
+<br>
+
+Considerando i tre modelli, quello semplice, quello con l'aggiunta della variabile categoriale Channel ed, infine, quello con anche l'interazione tra la variabile esplicativa Milk e Channel, abbiamo deciso di utilizzare quest'ultimo, considerando anche quanto mostrato dagli output relativi ai tre AIC ed al test ANOVA
+
+```{r gvlma3, echo = FALSE}
+par(mfrow = c(2,2))
+plot(fit33)
+gvlma_obj3 = gvlma(fit33)
+gvlma_obj3
+```
+
+```{r, results = TRUE}
+dafr3 <- data.frame(Info = c("Skewness", "Kurtosis", "Heteroscedasticity"),
+                    Value = c("1.244e+03", "3.482e+04", "5.509e-02"),
+                    Pvalue = c("0.00000", "0.00000", "0.814426"),
+                    Decision = c("Assumptions NOT satisfied", "Assumptions NOT satisfied", "Assumptions acceptable"))
+
+dafr3 %>%
+  kbl() %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+# print("Togliere commento output GULMA")
+```
+
+<br>
+
+Dai plot sui residui, dal qqnorm e dai risultati delle assunzioni mostrate dall'oggetto gvlma, ne evince come vi sia omoschedasticità, ma per quanto riguarda linearità e gaussianità il modello non rispetta le assunzioni stabilite.
+
+```{r scatterplot3, echo = FALSE}
+b03 = coef(fit33)[1]
+b13 = coef(fit33)[2]
+b23 = coef(fit33)[3]
+b33 = coef(fit33)[4]
+
+gm3 = ggplot(wholesale, aes(x = esp_var3, y = risp_var3, color = Channel)) + 
+  geom_point(size = 0.5) + 
+  geom_abline(intercept = b03, slope = b13, color = "#F8766D") +
+  geom_abline(intercept = b03 + b23, slope = b13 + b33, color = "#00BFC4") +
+  ggtitle("Detergents_Paper ~ Milk") +
+  xlab("Milk") +
+  ylab("Detergents_Paper") + 
+  theme(legend.position="none")
+```
+
+<br><br>
+
+#### Milk \~ Delicassen
+
+```{r Milk ~ Delicassen, fig.align='center', fig.width=7, fig.height=5}
+g41 = ggplot(data = wholesale, aes(x = Delicassen, y = Milk)) + 
+  geom_point(size = 0.5)
+g42 = ggplot(data = wholesale, aes(x = log(Delicassen), y = Milk)) + 
+  geom_point(size = 0.5)
+g43 = ggplot(data = wholesale, aes(x = sqrt(Delicassen), y = Milk)) +
+  geom_point(size = 0.5)
+g44 = ggplot(data = wholesale, aes(x = (Delicassen)^2, y = Milk)) + 
+  geom_point(size = 0.5)
+
+grid.arrange(g41, g42, g43, g44, ncol=2)
+
+cor(wholesale$Delicassen, wholesale$Milk)
+cor(log(wholesale$Delicassen), wholesale$Milk)
+cor(sqrt(wholesale$Delicassen), wholesale$Milk)
+cor((wholesale$Delicassen)^2, wholesale$Milk)
+```
+
+-   Indice di correlazione senza trasformazioni: 0.4063683
+
+-   Indice di correlazione con trasformazione logaritmica: 0.2768891
+
+-   Indice di correlazione con trasformazione square root: 0.4139261
+
+-   Indice di correlazione con trasformazione quadratica: 0.2877589
+
+Dagli indici di correlazione emerge come, in questo caso, sia meglio considerare la radice quadrata della variabile esplicativa Delicassen
+
+```{r fit4, echo = FALSE}
+risp_var4 = wholesale$Milk
+esp_var4 = sqrt(wholesale$Delicassen)
+fit14 = lm(risp_var4 ~ esp_var4, data = wholesale)
+summary(fit14) # Multiple R-squared:  0.1713
+
+fit24 = lm(risp_var4 ~ esp_var4 + Channel, data = wholesale)
+summary(fit24) # Adjusted R-squared:  0.3377
+
+fit34 = lm(risp_var4 ~ esp_var4 + Channel + esp_var4*Channel, data = wholesale)
+summary(fit34) # Adjusted R-squared:  0.3381
+
+AIC(fit14, fit24, fit34)
+anova(fit14, fit24, fit34)
+```
+
+<br>
+
+Gli R\^2 relativi ai tre modelli sono i seguenti:
+
+-   Milk \~ Delicassen: 0.1713
+
+-   Milk \~ Delicassen + Channel: 0.3377
+
+-   Milk \~ Delicassen + Channel + Delicassen \* Channel: 0.3381
+
+<br>
+
+Output AIC ed ANOVA:
+
+```{r, results = TRUE}
+modello_1 = fit14
+modello_2 = fit24
+modello_3 = fit34
+AIC(modello_1, modello_2, modello_3)
+anova(modello_1, modello_2, modello_3)
+```
+
+<br>
+
+Sebbene i tre R\^2 non siano alti, quindi i tre modelli non spiegano bene i dati, dopo aver valutato anche i tre AIC e l'output del test ANOVA, emerge come il modello senza interazione ma con l'aggiunta di Channel sia il più adatto, in quanto, nonostante non sia quello con R\^2 maggiore, ha AIC minore e l'ANOVA mostra che l'aggiunta dell'interazione non è significativa (p-value = 0.2556).
+
+Inoltre, per coerenza con quanto precedentemente detto, è preferibile utilizzare il modello più semplice possibile nel caso in cui le differenze a livello di R\^2 e AIC non siano così rilevanti.
+
+```{r gvlma4, results = FALSE}
+par(mfrow = c(2,2))
+plot(fit24)
+gvlma_obj4 = gvlma(fit24)
+gvlma_obj4
+```
+
+```{r, results = TRUE}
+dafr4 <- data.frame(Info = c("Skewness", "Kurtosis", "Heteroscedasticity"),
+                    Value = c("1331.45", "21844.71", "81.05"),
+                    Pvalue = c("0.00000", "0.00000", "0.00000"),
+                    Decision = c("Assumptions NOT satisfied", "Assumptions NOT satisfied", "Assumptions NOT satisfied"))
+
+dafr4 %>%
+  kbl() %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+# print("Togliere commento output GULMA")
+```
+
+<br>
+
+Anche in questo caso, come precedentemente osservato con Milk \~ Grocery, nessuna ipotesi è rispettata, infatti osservando i grafici ed i risultati dell'oggetto gvlma, emerge come vi sia eteroschedasticità, non gaussianità, e non linearità nella relazione Milk condizionatamente a Delicassen.
+
+```{r scatterplot4, echo = FALSE}
+b04 = coef(fit24)[1]
+b14 = coef(fit24)[2]
+b24 = coef(fit24)[3]
+
+gm4 = ggplot(wholesale, aes(x = esp_var4, y = risp_var4, color = Channel)) + 
+  geom_point(size = 0.5) + 
+  geom_abline(intercept = b04, slope = b14, color = "#F8766D") +
+  geom_abline(intercept = b04 + b24, slope = b14, color = "#00BFC4") +
+  ggtitle("Milk ~ Delicassen") +
+  xlab("sqrt(Delicassen)") +
+  ylab("Milk") + theme(legend.direction = "horizontal")
+```
+
+<br>
+
+Di seguito riportiamo i quattro scatterplot con le relative rette di regressione lineare:
+
+```{r 4grafici, fig.align='center', fig.width=7, fig.height=7}
+# Stampa dei 4 grafici nella stessa finestra
+legend = g_legend(gm4)
+gm4 = gm4 + theme(legend.position = "none")
+grid.arrange(gm1, gm2, gm3, gm4, ncol=2, bottom = legend)
+```
+
+<br><br>
+
+## Conclusione
+
+Valutando i quattro modelli, secondo le loro caratteristiche, possiamo affermare che il modello più affidabile risulta essere quello basato sulla relazione Detergents_Paper \~ Grocery, mentre, i restanti tre, risultano inaffidabili.
+
+Considerando la bontà del primo modello visualizziamo la differenza, in termini di spesa di Detergents_Paper, tra i clienti Horeca e Retail che spendono 75000 m.u. in Grocery.
+
+```{r predict}
+pred1 = b01 + b11*75000 + b21 + b31*75000
+pred2 = b01 + b11*75000
+
+ggplot(wholesale, aes(x = esp_var1, y = risp_var1, color = Channel)) + 
+  geom_point(size = 0.5) + 
+  geom_abline(intercept = b01, slope = b11, color = "#F8766D") +
+  geom_abline(intercept = b01 + b21, slope = b11 + b31, color = "#00BFC4") +
+  ggtitle("Detergents_Paper ~ Grocery") +
+  xlab("Grocery") +
+  ylab("Detergents_Paper") + 
+  geom_point(x = 75000, y = pred1, col = "darkorange", size = 2) + 
+  geom_point(x = 75000, y = pred2, col = "darkorange", size = 2) +
+  geom_segment(x = 75000, y = pred1, xend = 75000, yend = pred2, linetype = "dashed", col = "darkorange")
+```
+
+La differenza, in valore assoluto, risulta essere 22155.14 m.u.
+
+```{r}
+abs(pred2 - pred1)
+```
+
+<br>
+
+<hr>
+
+<br>
+
+Per quanto riguarda la cluster analysis abbiamo ritenuto che, disponendo già di due variabili categoriali su cui basare i raggruppamenti, le informazioni tratte da essa sarebbero risultate irrilevanti.
+
+## 
+
+```{r kmeans, fig.show='hide'}
+library(cluster)
+scaled_wholesale = scale(wholesale[, -c(1, 2, 9, 10, 11, 12, 13, 14)])
+km_out = kmeans(scaled_wholesale, centers = 2, nstart = 10)
+table(km_out$cluster)
+plot(scaled_wholesale, col = (km_out$cluster + 1), main = "K-Mean (K = 2)", pch = 19)
+
+# Con 3 centroidi
+km_out2 = kmeans(scaled_wholesale, centers = 3, nstart = 10)
+table(km_out2$cluster)
+plot(scaled_wholesale, col = (km_out2$cluster + 1), main = "K-Mean (K = 3)", pch = 19)
+
+# Con 4 centroidi
+km_out3 = kmeans(scaled_wholesale, centers = 4, nstart = 10)
+table(km_out3$cluster)
+plot(scaled_wholesale, col = (km_out3$cluster + 1), main = "K-Mean (K = 4)", pch = 19)
+
+km_out$tot.withinss
+km_out2$tot.withinss
+km_out3$tot.withinss
+```
+
+```{r pam, fig.show='hide'}
+x = wholesale[, -c(1, 2, 5:14)] # prendo solo Fresh e Milk
+pam_out = pam(x, 2, metric = "euclidean", stand = TRUE)
+pam_out$medoids
+
+plot(x, col = (pam_out$cluster + 1), main = "PAM (K = 2)", pch = 19)
+points(pam_out$medoids, pch = as.character(pam_out$cluster[pam_out$id.med]))
+```
+
+```{r fresh_milk, fig.show='hide'}
+# Con 3 medoidi
+y = x
+pam_out2 = pam(y, 3, metric = "euclidean", stand = TRUE)
+plot(y, col = (pam_out2$cluster + 1), main = "PAM (K = 3)", pch = 19)
+points(pam_out2$medoids, pch = as.character(pam_out2$cluster[pam_out2$id.med]))
+```
+
+```{r grafici_clustering, fig.align='center', fig.show='hide'}
+colors = c("#F8766D", "#00BFC4", "#00BA38")
+par(mfrow = c(1, 2))
+# 2-means
+plot(scaled_wholesale, col = (km_out$cluster + 1), main = "K-Mean (K = 2)", pch = 19, cex = 0.5)
+# 3-means
+plot(scaled_wholesale, col = (km_out2$cluster + 1), main = "K-Mean (K = 3)", pch = 19, cex = 0.5)
+# PAM 2 medoidi
+plot(x, col = (pam_out$cluster + 1), main = "PAM (K = 2)", pch = 19, cex = 0.5)
+points(pam_out$medoids, pch = as.character(pam_out$cluster[pam_out$id.med]))
+# PAM 3 medoidi
+plot(y, col = (pam_out2$cluster + 1), main = "PAM (K = 3)", pch = 19, cex = 0.5)
+points(pam_out2$medoids, pch = as.character(pam_out2$cluster[pam_out2$id.med]))
+# Channel
+c1 = ggplot(wholesale, aes(x = Fresh, y = Milk, col = Channel)) +
+  geom_point(size = 0.5)
+# Region
+c2 = ggplot(wholesale, aes(x = Fresh, y = Milk, col = Region)) +
+  geom_point(size = 0.9)
+grid.arrange(c1, c2, ncol = 2)
+
+# withinss per k-means
+km_out$tot.withinss
+km_out2$tot.withinss
+
+# medoidi per PAM
+pam_out$medoids
+pam_out2$medoids
+```
